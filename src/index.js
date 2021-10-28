@@ -1,85 +1,96 @@
-(async () => {
+const shaderSource = `
+// Vertex shader
+
+struct VertexOutput {
+    [[builtin(position)]] clip_position: vec4<f32>;
+};
+
+[[stage(vertex)]]
+fn mainVert(
+    [[builtin(vertex_index)]] in_vertex_index: u32,
+) -> VertexOutput {
+    var out: VertexOutput;
+    let x = f32(1 - i32(in_vertex_index)) * 0.5;
+    let y = f32(i32(in_vertex_index & 1u) * 2 - 1) * 0.5;
+    out.clip_position = vec4<f32>(x, y, 0.0, 1.0);
+    return out;
+}
+
+// Fragment shader
+
+[[stage(fragment)]]
+fn mainFrag(in: VertexOutput) -> [[location(0)]] vec4<f32> {
+    return vec4<f32>(0., 0.5, 0.8, 1.0);
+}
+`
+
+;(async () => {
   const canvas = document.createElement('canvas')
   const size = { width: 640, height: 360 }
   canvas.width = size.width
   canvas.height = size.height
   document.body.appendChild(canvas)
 
-  const context = canvas.getContext("gpupresent")
+  const context = canvas.getContext('webgpu')
   const adapter = await navigator.gpu.requestAdapter()
   const device = await adapter.requestDevice()
-  const queue = device.defaultQueue
-  const swapChain = context.configureSwapChain({
+  const preferredFormat = context.getPreferredFormat?.(adapter) || 'bgra8unorm'
+  const presentationSize = { width: canvas.width, height: canvas.height }
+  context.configure({
     device,
-    format: "bgra8unorm",
-    usage: GPUTextureUsage.OUTPUT_ATTACHMENT
+    format: preferredFormat,
+    size: presentationSize
   })
 
+  const shader = device.createShaderModule({
+    label: 'Shader',
+    code: shaderSource
+  })
 
-  // glslangModule
-  const module = await (window["eval"])(`import("https://unpkg.com/@webgpu/glslang@0.0.15/dist/web-devel/glslang.js")`)
-  glslangModule = await module.default()
+  const renderPipelineLayout = device.createPipelineLayout({
+    label: 'Render Pipeline Layout',
+    bindGroupLayouts: []
+  })
 
   const renderPipeline = device.createRenderPipeline({
-    layout: device.createPipelineLayout({ bindGroupLayouts: [] }),
-    vertexState: { vertexBuffers: [] },
-    vertexStage: {
-      module: device.createShaderModule({
-        code: glslangModule.compileGLSL(require('./shader/main.vert').default, 'vertex'),
-      }),
-      entryPoint: "main"
+    label: 'Render Pipeline',
+    layout: renderPipelineLayout,
+    vertex: {
+      module: shader,
+      entryPoint: 'mainVert',
+      buffers: []
     },
-    fragmentStage: {
-      module: device.createShaderModule({
-        code: glslangModule.compileGLSL(require('./shader/main.frag').default, 'fragment'),
-      }),
-      entryPoint: "main"
+    fragment: {
+      module: shader,
+      entryPoint: 'mainFrag',
+      targets: [
+        {
+          format: preferredFormat
+        }
+      ]
     },
-    primitiveTopology: "triangle-list",
-    depthStencilState: {
-      depthWriteEnabled: true,
-      depthCompare: "less",
-      format: "depth32float"
-    },
-    rasterizationState: { cullMode: "none" },
-    colorStates: [{ format: "bgra8unorm" }],
+    primitive: {
+      topology: 'triangle-list'
+    }
   })
 
-  const state = {
-    context,
-    device,
-    queue,
-    swapChain,
-    renderPipeline,
-  }
-  window.state = state // debug
-
-  const depthAttachment = device.createTexture({
-    size: { width: size.width, height: size.height, depth: 1 },
-    format: "depth32float",
-    usage: GPUTextureUsage.OUTPUT_ATTACHMENT
-  }).createView();
-
   const af = () => {
-    const commandEncoder = device.createCommandEncoder({})
+    const commandEncoder = device.createCommandEncoder()
+    const textureView = context.getCurrentTexture().createView()
     const renderPass = commandEncoder.beginRenderPass({
-      colorAttachments: [{
-        attachment: swapChain.getCurrentTexture().createView(),
-        loadValue: {r: 0, g: 0, b: 0, a: 0},
-        storeOp: "store"
-      }],
-      depthStencilAttachment: {
-        attachment: depthAttachment,
-        depthLoadValue: 1.0,
-        depthStoreOp: "store",
-        stencilLoadValue: 0,
-        stencilStoreOp: "store"
-      }
+      label: 'Render Pass',
+      colorAttachments: [
+        {
+          view: textureView,
+          loadValue: { r: 0, g: 0, b: 0, a: 0 },
+          storeOp: 'store'
+        }
+      ]
     })
-    renderPass.setPipeline(state.renderPipeline)
+    renderPass.setPipeline(renderPipeline)
     renderPass.draw(3)
     renderPass.endPass()
-    device.defaultQueue.submit([commandEncoder.finish()])
+    device.queue.submit([commandEncoder.finish()])
     requestAnimationFrame(af)
   }
   requestAnimationFrame(af)

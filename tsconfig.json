@@ -1,0 +1,13 @@
+{
+  "include": ["src/**/*.ts"],
+  "compilerOptions": {
+    "strict": true,
+    "module": "ESNext",
+    "target": "ESNext",
+    "moduleResolution": "Node",
+    "lib": ["DOM", "ESNext"],
+    "jsx": "react",
+    "allowSyntheticDefaultImports": true,
+    "typeRoots": ["./node_modules/@webgpu/types", "./node_modules/@types"]
+  }
+}

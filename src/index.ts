@@ -23,6 +23,9 @@ const module = device.createShaderModule({
       local_id : vec3<u32>,
 
     ) {
+      if(global_id.x >= arrayLength(&output)) {
+        return;
+      }
       output[global_id.x] = f32(local_id.x);
     }
   `

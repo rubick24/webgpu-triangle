@@ -1,105 +1,76 @@
-if (!navigator.gpu) throw Error('WebGPU not supported.')
+import triangleVertWGSL from './shader/triangle.vert.wgsl'
+import redFragWGSL from './shader/red.frag.wgsl'
+const adapter = (await navigator.gpu.requestAdapter())!
+const device = (await adapter.requestDevice())!
 
-const adapter = await navigator.gpu.requestAdapter()
-if (!adapter) throw Error('Couldn’t request WebGPU adapter.')
+const canvas = document.createElement('canvas')
+const devicePixelRatio = window.devicePixelRatio || 1;
 
-const device = await adapter.requestDevice()
-if (!device) throw Error('Couldn’t request WebGPU logical device.')
-
-console.log(device.limits)
-
-const module = device.createShaderModule({
-  code: `
-    @group(0) @binding(1)
-    var<storage, read_write> output: array<f32>;
-
-    @compute @workgroup_size(64)
-    fn main(
-
-      @builtin(global_invocation_id)
-      global_id : vec3<u32>,
-
-      @builtin(local_invocation_id)
-      local_id : vec3<u32>,
-
-    ) {
-      if(global_id.x >= arrayLength(&output)) {
-        return;
-      }
-      output[global_id.x] = f32(local_id.x);
-    }
-  `
+const width = 960
+const height = 540
+canvas.width = width * devicePixelRatio
+canvas.height = height * devicePixelRatio
+Object.assign(canvas.style, {
+  width: `${width}px`,
+  height: `${height}px`
 })
-
-const BUFFER_SIZE = 1024
-
-const bindGroupLayout = device.createBindGroupLayout({
-  entries: [
-    {
-      binding: 1,
-      visibility: GPUShaderStage.COMPUTE,
-      buffer: {
-        type: 'storage'
-      }
-    }
-  ]
+document.body.appendChild(canvas)
+const context = canvas.getContext('webgpu') as unknown as GPUCanvasContext
+const presentationFormat = navigator.gpu.getPreferredCanvasFormat()
+console.log(1)
+context.configure({
+  device,
+  format: presentationFormat,
+  alphaMode: 'premultiplied'
 })
-const output = device.createBuffer({
-  size: BUFFER_SIZE,
-  usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
-})
-
-const stagingBuffer = device.createBuffer({
-  size: BUFFER_SIZE,
-  usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
-})
-const bindGroup = device.createBindGroup({
-  layout: bindGroupLayout,
-  entries: [
-    {
-      binding: 1,
-      resource: {
-        buffer: output
-      }
-    }
-  ]
-})
-const pipelineLayout = device.createPipelineLayout({
-  bindGroupLayouts: [bindGroupLayout]
-})
-
-const pipeline = device.createComputePipeline({
-  layout: pipelineLayout,
-  compute: {
-    module,
+const pipeline = device.createRenderPipeline({
+  layout: 'auto',
+  vertex: {
+    module: device.createShaderModule({
+      code: triangleVertWGSL
+    }),
     entryPoint: 'main'
-  }
+  },
+  fragment: {
+    module: device.createShaderModule({
+      code: redFragWGSL
+    }),
+    entryPoint: 'main',
+    targets: [
+      {
+        format: presentationFormat
+      }
+    ]
+  },
+  primitive: {
+    topology: 'triangle-list'
+  },
 })
 
-const commandEncoder = device.createCommandEncoder()
-const passEncoder = commandEncoder.beginComputePass()
-passEncoder.setPipeline(pipeline)
-passEncoder.setBindGroup(0, bindGroup)
-passEncoder.dispatchWorkgroups(Math.ceil(BUFFER_SIZE / 64))
-passEncoder.end()
-commandEncoder.copyBufferToBuffer(
-  output,
-  0, // Source offset
-  stagingBuffer,
-  0, // Destination offset
-  BUFFER_SIZE
-)
-const commands = commandEncoder.finish()
-device.queue.submit([commands])
+function frame() {
+  const commandEncoder = device.createCommandEncoder()
+  const textureView = context.getCurrentTexture().createView()
 
-await stagingBuffer.mapAsync(
-  GPUMapMode.READ,
-  0, // Offset
-  BUFFER_SIZE // Length
-)
-const copyArrayBuffer = stagingBuffer.getMappedRange(0, BUFFER_SIZE)
-const data = copyArrayBuffer.slice(0)
-stagingBuffer.unmap()
-console.log(new Float32Array(data))
+  const renderPassDescriptor: GPURenderPassDescriptor = {
+    colorAttachments: [
+      {
+        view: textureView,
+        clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
+        loadOp: 'clear',
+        storeOp: 'store'
+      }
+    ]
+  }
+
+  const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor)
+  passEncoder.setPipeline(pipeline)
+  passEncoder.draw(3, 1, 0, 0)
+  passEncoder.end()
+
+  device.queue.submit([commandEncoder.finish()])
+  requestAnimationFrame(frame)
+}
+
+requestAnimationFrame(frame)
 
 export {}

@@ -8,6 +8,6 @@
     "lib": ["DOM", "ESNext"],
     "jsx": "react",
     "allowSyntheticDefaultImports": true,
-    "typeRoots": ["./node_modules/@webgpu/types", "./node_modules/@types"]
+    "typeRoots": ["./node_modules/@types", "./node_modules/@webgpu/types"]
   }
 }

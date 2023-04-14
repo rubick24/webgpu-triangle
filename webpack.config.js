@@ -19,7 +19,7 @@ module.exports = function (env, argv) {
           loader: 'ts-loader'
         },
         {
-          test: /\.(glsl|vert|frag|txt)$/,
+          test: /\.(wgsl|glsl|vert|frag|txt)$/,
           type: 'asset/source'
         }
       ]
